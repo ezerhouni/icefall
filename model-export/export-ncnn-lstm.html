@@ -45,6 +45,7 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../installation/index.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docker/index.html">Docker</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../faqs.html">Frequently Asked Questions (FAQs)</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">Model export</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="export-model-state-dict.html">Export model.state_dict()</a></li>
@@ -75,6 +76,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../huggingface/index.html">Huggingface</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../decoding-with-langugage-models/index.html">Decoding with language models</a></li>
 </ul>
 
         </div>
@@ -161,7 +165,7 @@ git<span class="w"> </span>lfs<span class="w"> </span>pull<span class="w"> </spa
 
 ./lstm_transducer_stateless2/export-for-ncnn.py<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--exp-dir<span class="w"> </span><span class="nv">$dir</span>/exp<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--bpe-model<span class="w"> </span><span class="nv">$dir</span>/data/lang_bpe_500/bpe.model<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--tokens<span class="w"> </span><span class="nv">$dir</span>/data/lang_bpe_500/tokens.txt<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--epoch<span class="w"> </span><span class="m">99</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--avg<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--use-averaged-model<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="se">\</span>

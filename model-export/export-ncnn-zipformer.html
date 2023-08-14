@@ -45,6 +45,7 @@
               <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
 <ul class="current">
 <li class="toctree-l1"><a class="reference internal" href="../installation/index.html">Installation</a></li>
+<li class="toctree-l1"><a class="reference internal" href="../docker/index.html">Docker</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../faqs.html">Frequently Asked Questions (FAQs)</a></li>
 <li class="toctree-l1 current"><a class="reference internal" href="index.html">Model export</a><ul class="current">
 <li class="toctree-l2"><a class="reference internal" href="export-model-state-dict.html">Export model.state_dict()</a></li>
@@ -74,6 +75,9 @@
 <ul>
 <li class="toctree-l1"><a class="reference internal" href="../contributing/index.html">Contributing</a></li>
 <li class="toctree-l1"><a class="reference internal" href="../huggingface/index.html">Huggingface</a></li>
+</ul>
+<ul>
+<li class="toctree-l1"><a class="reference internal" href="../decoding-with-langugage-models/index.html">Decoding with language models</a></li>
 </ul>
 
         </div>
@@ -159,12 +163,11 @@ git<span class="w"> </span>lfs<span class="w"> </span>pull<span class="w"> </spa
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="nv">dir</span><span class="o">=</span>./icefall-asr-librispeech-pruned-transducer-stateless7-streaming-2022-12-29
 
 ./pruned_transducer_stateless7_streaming/export-for-ncnn.py<span class="w"> </span><span class="se">\</span>
-<span class="w">  </span>--bpe-model<span class="w"> </span><span class="nv">$dir</span>/data/lang_bpe_500/bpe.model<span class="w"> </span><span class="se">\</span>
+<span class="w">  </span>--tokens<span class="w"> </span><span class="nv">$dir</span>/data/lang_bpe_500/tokens.txt<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--exp-dir<span class="w"> </span><span class="nv">$dir</span>/exp<span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--use-averaged-model<span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--epoch<span class="w"> </span><span class="m">99</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--avg<span class="w"> </span><span class="m">1</span><span class="w"> </span><span class="se">\</span>
-<span class="w">  </span><span class="se">\</span>
 <span class="w">  </span>--decode-chunk-len<span class="w"> </span><span class="m">32</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--num-left-chunks<span class="w"> </span><span class="m">4</span><span class="w"> </span><span class="se">\</span>
 <span class="w">  </span>--num-encoder-layers<span class="w"> </span><span class="s2">&quot;2,4,3,2,4&quot;</span><span class="w"> </span><span class="se">\</span>
@@ -432,7 +435,7 @@ this layer.</p></li>
 The result looks like below:</p>
 <div class="highlight-bash notranslate"><div class="highlight"><pre><span></span><span class="m">7767517</span>
 <span class="m">2029</span><span class="w"> </span><span class="m">2547</span>
-SherpaMetaData<span class="w">           </span>sherpa_meta_data1<span class="w">        </span><span class="m">0</span><span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="nv">0</span><span class="o">=</span><span class="m">2</span><span class="w"> </span><span class="nv">1</span><span class="o">=</span><span class="m">32</span><span class="w"> </span><span class="nv">2</span><span class="o">=</span><span class="m">4</span><span class="w"> </span><span class="nv">3</span><span class="o">=</span><span class="m">7</span><span class="w"> </span>-23316<span class="o">=</span><span class="m">5</span>,2,4,3,2,4<span class="w"> </span>-23317<span class="o">=</span><span class="m">5</span>,384,384,384,384,384<span class="w"> </span>-23318<span class="o">=</span><span class="m">5</span>,192,192,192,192,192<span class="w"> </span>-23319<span class="o">=</span><span class="m">5</span>,1,2,4,8,2<span class="w"> </span>-23320<span class="o">=</span><span class="m">5</span>,31,31,31,31,31
+SherpaMetaData<span class="w">           </span>sherpa_meta_data1<span class="w">        </span><span class="m">0</span><span class="w"> </span><span class="m">0</span><span class="w"> </span><span class="nv">0</span><span class="o">=</span><span class="m">2</span><span class="w"> </span><span class="nv">1</span><span class="o">=</span><span class="m">32</span><span class="w"> </span><span class="nv">2</span><span class="o">=</span><span class="m">4</span><span class="w"> </span><span class="nv">3</span><span class="o">=</span><span class="m">7</span><span class="w"> </span><span class="nv">15</span><span class="o">=</span><span class="m">1</span><span class="w"> </span>-23316<span class="o">=</span><span class="m">5</span>,2,4,3,2,4<span class="w"> </span>-23317<span class="o">=</span><span class="m">5</span>,384,384,384,384,384<span class="w"> </span>-23318<span class="o">=</span><span class="m">5</span>,192,192,192,192,192<span class="w"> </span>-23319<span class="o">=</span><span class="m">5</span>,1,2,4,8,2<span class="w"> </span>-23320<span class="o">=</span><span class="m">5</span>,31,31,31,31,31
 Input<span class="w">                    </span>in0<span class="w">                      </span><span class="m">0</span><span class="w"> </span><span class="m">1</span><span class="w"> </span>in0
 </pre></div>
 </div>
@@ -459,6 +462,9 @@ parameter <code class="docutils literal notranslate"><span class="pre">--num-lef
 <li><p><code class="docutils literal notranslate"><span class="pre">3=7</span></code>, 3 is the key and 7 is the value of for the amount of padding
 used in the Conv2DSubsampling layer. It should be 7 for zipformer
 if you don’t change zipformer.py.</p></li>
+<li><p><code class="docutils literal notranslate"><span class="pre">15=1</span></code>, attribute 15, this is the model version. Starting from
+<a class="reference external" href="https://github.com/k2-fsa/sherpa-ncnn">sherpa-ncnn</a> v2.0, we require that the model version has to
+be &gt;= 1.</p></li>
 <li><p><code class="docutils literal notranslate"><span class="pre">-23316=5,2,4,3,2,4</span></code>, attribute 16, this is an array attribute.
 It is attribute 16 since -23300 - (-23316) = 16.
 The first element of the array is the length of the array, which is 5 in our case.
@@ -505,19 +511,22 @@ will be <code class="docutils literal notranslate"><span class="pre">SAD</span><
 <tr class="row-odd"><td><p>3</p></td>
 <td><p>7 (if you don’t change code)</p></td>
 </tr>
-<tr class="row-even"><td><p>-23316</p></td>
+<tr class="row-even"><td><p>15</p></td>
+<td><p>1 (The model version)</p></td>
+</tr>
+<tr class="row-odd"><td><p>-23316</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">--num-encoder-layer</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p>-23317</p></td>
+<tr class="row-even"><td><p>-23317</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">--encoder-dims</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p>-23318</p></td>
+<tr class="row-odd"><td><p>-23318</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">--attention-dims</span></code></p></td>
 </tr>
-<tr class="row-odd"><td><p>-23319</p></td>
+<tr class="row-even"><td><p>-23319</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">--zipformer-downsampling-factors</span></code></p></td>
 </tr>
-<tr class="row-even"><td><p>-23320</p></td>
+<tr class="row-odd"><td><p>-23320</p></td>
 <td><p><code class="docutils literal notranslate"><span class="pre">--cnn-module-kernels</span></code></p></td>
 </tr>
 </tbody>
