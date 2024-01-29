@@ -89,6 +89,9 @@ class VITS(nn.Module):
             "stochastic_duration_predictor_dropout_rate": 0.5,
             "stochastic_duration_predictor_flows": 4,
             "stochastic_duration_predictor_dds_conv_layers": 3,
+            "use_noised_mas": False,
+            "noise_initial_mas": 0.01,
+            "noise_scale_mas": 2e-06,
         },
         # discriminator related
         discriminator_type: str = "hifigan_multi_scale_multi_period_discriminator",
@@ -382,14 +385,16 @@ class VITS(nn.Module):
                 )
             kl_loss = self.kl_loss(z_p, logs_q, m_p, logs_p, z_mask)
 
-            adv_loss = self.generator_adv_loss(p_hat)
             feat_match_loss = self.feat_match_loss(p_hat, p)
 
             # Generator duration loss
             y_dur_hat_r, y_dur_hat_g = self.duration_discriminator(
                 hidden_x, x_mask, logw_, logw
             )
-            dur_loss = self.duration_loss.forward_generator(y_dur_hat_g)
+            dur_loss = torch.sum(l_length.float())
+            adv_loss = self.generator_adv_loss(y_dur_hat_g)
+
+            # dur_loss = self.duration_loss.forward_generator(y_dur_hat_g)
 
             mel_loss = mel_loss * self.lambda_mel
             kl_loss = kl_loss * self.lambda_kl
@@ -487,7 +492,10 @@ class VITS(nn.Module):
         y_dur_hat_r, y_dur_hat_g = self.duration_discriminator(
             hidden_x.detach(), x_mask.detach(), logw_.detach(), logw.detach()
         )
-        dur_loss = self.duration_loss.forward_discriminator(y_dur_hat_r, y_dur_hat_g)
+        dur_loss = (
+            self.duration_loss.forward_discriminator(y_dur_hat_r, y_dur_hat_g)
+            * self.lambda_dur
+        )
 
         # calculate discriminator outputs
         p_hat = self.discriminator(speech_hat_.detach())

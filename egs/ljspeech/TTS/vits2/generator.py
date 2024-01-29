@@ -72,6 +72,9 @@ class VITSGenerator(torch.nn.Module):
         stochastic_duration_predictor_dropout_rate: float = 0.5,
         stochastic_duration_predictor_flows: int = 4,
         stochastic_duration_predictor_dds_conv_layers: int = 3,
+        use_noised_mas: bool = True,
+        noise_initial_mas: float = 0.01,
+        noise_scale_mas: float = 2e-6,
     ):
         """Initialize VITS generator module.
 
@@ -129,6 +132,9 @@ class VITSGenerator(torch.nn.Module):
                 duration predictor.
             stochastic_duration_predictor_dds_conv_layers (int): Number of DDS conv
                 layers in stochastic duration predictor.
+            use_noised_mas (bool): Whether to use MAS with gaussian noise (VITS2)
+            noise_initial_mas (float): Initial noise for MAS with gaussian noise
+            noise_scale_mas (float):  Decreasing step for MAS with gaussian noise
 
         """
         super().__init__()
@@ -191,6 +197,13 @@ class VITSGenerator(torch.nn.Module):
         )
 
         self.upsample_factor = int(np.prod(decoder_upsample_scales))
+
+        # MAS with Gaussian Noise params
+        self.use_noised_mas = use_noised_mas
+        self.noise_current_mas = noise_initial_mas
+        self.noise_scale_mas = noise_scale_mas
+        self.noise_initial_mas = noise_initial_mas
+
         self.spks = None
         if spks is not None and spks > 1:
             assert global_channels > 0
@@ -321,6 +334,15 @@ class VITSGenerator(torch.nn.Module):
             )
             # (B, T_feats, T_text)
             neg_x_ent = neg_x_ent_1 + neg_x_ent_2 + neg_x_ent_3 + neg_x_ent_4
+
+            if self.use_noised_mas:
+                epsilon = (
+                    torch.std(neg_x_ent)
+                    * torch.randn_like(neg_x_ent)
+                    * self.noise_current_mas
+                )
+                neg_x_ent = neg_x_ent + epsilon
+
             # (B, 1, T_feats, T_text)
             attn_mask = torch.unsqueeze(x_mask, 2) * torch.unsqueeze(y_mask, -1)
             # monotonic attention weight: (B, 1, T_feats, T_text)
