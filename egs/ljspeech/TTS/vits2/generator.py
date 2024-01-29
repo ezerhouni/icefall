@@ -67,7 +67,7 @@ class VITSGenerator(torch.nn.Module):
         use_weight_norm_in_flow: bool = True,
         use_only_mean_in_flow: bool = True,
         use_post_transformer: bool = True,
-        use_transformer_flows: bool = True,
+        use_transformer_flows: bool = False,
         stochastic_duration_predictor_kernel_size: int = 3,
         stochastic_duration_predictor_dropout_rate: float = 0.5,
         stochastic_duration_predictor_flows: int = 4,

@@ -84,7 +84,7 @@ class VITS(nn.Module):
             "use_weight_norm_in_flow": True,
             "use_only_mean_in_flow": True,
             "use_post_transformer": True,
-            "use_transformer_flows": True,
+            "use_transformer_flows": False,
             "stochastic_duration_predictor_kernel_size": 3,
             "stochastic_duration_predictor_dropout_rate": 0.5,
             "stochastic_duration_predictor_flows": 4,
@@ -385,15 +385,15 @@ class VITS(nn.Module):
             adv_loss = self.generator_adv_loss(p_hat)
             feat_match_loss = self.feat_match_loss(p_hat, p)
 
-            # Discriminator loss
+            # Generator duration loss
             y_dur_hat_r, y_dur_hat_g = self.duration_discriminator(
-                hidden_x.detach(), x_mask.detach(), logw_.detach(), logw.detach()
+                hidden_x, x_mask, logw_, logw
             )
-            dur_loss = self.duration_loss(y_dur_hat_r, y_dur_hat_g)
+            dur_loss = self.duration_loss.forward_generator(y_dur_hat_g)
 
             mel_loss = mel_loss * self.lambda_mel
             kl_loss = kl_loss * self.lambda_kl
-            # dur_loss = dur_loss * self.lambda_dur
+            dur_loss = dur_loss * self.lambda_dur
             adv_loss = adv_loss * self.lambda_adv
             feat_match_loss = feat_match_loss * self.lambda_feat_match
             loss = mel_loss + kl_loss + dur_loss + adv_loss + feat_match_loss
@@ -475,12 +475,19 @@ class VITS(nn.Module):
             self._cache = outs
 
         # parse outputs
-        speech_hat_, _, _, start_idxs, *_ = outs
+        speech_hat_, l_length, _, start_idxs, x_mask, z_mask, outs_ = outs
+        _, z_p, m_p, logs_p, _, logs_q, hidden_x, logw, logw_ = outs_
         speech_ = get_segments(
             x=speech,
             start_idxs=start_idxs * self.generator.upsample_factor,
             segment_size=self.generator.segment_size * self.generator.upsample_factor,
         )
+
+        # Discriminator duration loss
+        y_dur_hat_r, y_dur_hat_g = self.duration_discriminator(
+            hidden_x.detach(), x_mask.detach(), logw_.detach(), logw.detach()
+        )
+        dur_loss = self.duration_loss.forward_discriminator(y_dur_hat_r, y_dur_hat_g)
 
         # calculate discriminator outputs
         p_hat = self.discriminator(speech_hat_.detach())
@@ -489,12 +496,13 @@ class VITS(nn.Module):
         # calculate losses
         with autocast(enabled=False):
             real_loss, fake_loss = self.discriminator_adv_loss(p_hat, p)
-            loss = real_loss + fake_loss
+            loss = real_loss + fake_loss + dur_loss
 
         stats = dict(
             discriminator_loss=loss.item(),
             discriminator_real_loss=real_loss.item(),
             discriminator_fake_loss=fake_loss.item(),
+            discriminator_dur_loss=dur_loss,
         )
 
         # reset cache

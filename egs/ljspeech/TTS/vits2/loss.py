@@ -336,7 +336,7 @@ class KLDivergenceLossWithoutFlow(torch.nn.Module):
 
 
 class DurationLoss(torch.nn.Module):
-    def forward(self, disc_real_outputs, disc_generated_outputs):
+    def forward_discriminator(self, disc_real_outputs, disc_generated_outputs):
         loss = 0
         for dr, dg in zip(disc_real_outputs, disc_generated_outputs):
             dr = dr.float()
@@ -344,5 +344,13 @@ class DurationLoss(torch.nn.Module):
             r_loss = torch.mean((1 - dr) ** 2)
             g_loss = torch.mean(dg**2)
             loss += r_loss + g_loss
+
+        return loss
+
+    def forward_generator(self, disc_outputs):
+        loss = 0
+        for dg in disc_outputs:
+            dg = dg.float()
+            loss += torch.mean((1 - dg) ** 2)
 
         return loss
