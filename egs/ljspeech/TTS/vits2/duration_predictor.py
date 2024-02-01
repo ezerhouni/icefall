@@ -261,7 +261,6 @@ class DurationDiscriminator(torch.nn.Module):  # vits2
 
     def forward(self, x, x_mask, dur_r, dur_hat):
         x = torch.detach(x)
-
         x = self.conv_1(x * x_mask)
         x = torch.relu(x)
         x = self.norm_1(x)

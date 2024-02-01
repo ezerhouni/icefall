@@ -358,8 +358,8 @@ class VITSGenerator(torch.nn.Module):
         # forward duration predictor
         w = attn.sum(2)  # (B, 1, T_text)
 
-        l_length = self.duration_predictor(x, x_mask, w, g=g)
-        l_length = l_length / torch.sum(x_mask)
+        dur_nll = self.duration_predictor(x, x_mask, w, g=g)
+        dur_nll = dur_nll / torch.sum(x_mask)
         logw = self.duration_predictor(x, x_mask, g=g, inverse=True, noise_scale=1.0)
         logw_ = torch.log(w + 1e-6) * x_mask
 
@@ -381,7 +381,7 @@ class VITSGenerator(torch.nn.Module):
 
         return (
             wav,
-            l_length,
+            dur_nll,
             attn,
             z_start_idxs,
             x_mask,

@@ -382,9 +382,9 @@ class ResidualCouplingTransformersLayer(torch.nn.Module):
             1, 2
         )
 
-        xa = xa + xa_trans
+        xa_ = xa + xa_trans
 
-        h = self.input_conv(xa) * x_mask
+        h = self.input_conv(xa_) * x_mask
         h = self.encoder(h, x_mask, g=g)
 
         if self.use_post_transformer:

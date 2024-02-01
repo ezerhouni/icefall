@@ -414,6 +414,7 @@ def train_one_epoch(
                 )
             for k, v in stats_d.items():
                 loss_info[k] = v * batch_size
+
             # update discriminator
             optimizer_d.zero_grad()
             scaler.scale(loss_d).backward()
@@ -479,7 +480,7 @@ def train_one_epoch(
                 f"Epoch {params.cur_epoch}, batch {batch_idx}, "
                 f"global_batch_idx: {params.batch_idx_train}, batch size: {batch_size}, "
                 f"loss[{loss_info}], tot_loss[{tot_loss}], "
-                f"cur_lr_g: {cur_lr_g:.2e}, cur_lr_d: {cur_lr_d:.2e}, "
+                f"cur_lr_g: {cur_lr_g:.2e}, cur_lr_d: {cur_lr_d:.2e}"
                 + (f"grad_scale: {scaler._scale.item()}" if params.use_fp16 else "")
             )
 
@@ -761,10 +762,14 @@ def run(rank, world_size, args):
     model = get_model(params)
     generator = model.generator
     discriminator = model.discriminator
+    duration_discriminator = model.duration_discriminator
+    discriminator_params = list(discriminator.parameters()) + list(
+        duration_discriminator.parameters()
+    )
 
     num_param_g = sum([p.numel() for p in generator.parameters()])
     logging.info(f"Number of parameters in generator: {num_param_g}")
-    num_param_d = sum([p.numel() for p in discriminator.parameters()])
+    num_param_d = sum([p.numel() for p in discriminator_params])
     logging.info(f"Number of parameters in discriminator: {num_param_d}")
     logging.info(f"Total number of parameters: {num_param_g + num_param_d}")
 
@@ -780,7 +785,7 @@ def run(rank, world_size, args):
         generator.parameters(), lr=params.lr, betas=(0.8, 0.99), eps=1e-9
     )
     optimizer_d = torch.optim.AdamW(
-        discriminator.parameters(), lr=params.lr, betas=(0.8, 0.99), eps=1e-9
+        discriminator_params, lr=params.lr, betas=(0.8, 0.99), eps=1e-9
     )
 
     scheduler_g = torch.optim.lr_scheduler.ExponentialLR(optimizer_g, gamma=0.999875)
@@ -813,7 +818,6 @@ def run(rank, world_size, args):
         register_inf_check_hooks(model)
 
     ljspeech = LJSpeechTtsDataModule(args)
-
     train_cuts = ljspeech.train_cuts()
 
     def remove_short_and_long_utt(c: Cut):
@@ -834,15 +838,15 @@ def run(rank, world_size, args):
     valid_cuts = ljspeech.valid_cuts()
     valid_dl = ljspeech.valid_dataloaders(valid_cuts)
 
-    if not params.print_diagnostics:
-        scan_pessimistic_batches_for_oom(
-            model=model,
-            train_dl=train_dl,
-            tokenizer=tokenizer,
-            optimizer_g=optimizer_g,
-            optimizer_d=optimizer_d,
-            params=params,
-        )
+    # if not params.print_diagnostics:
+    #     scan_pessimistic_batches_for_oom(
+    #         model=model,
+    #         train_dl=train_dl,
+    #         tokenizer=tokenizer,
+    #         optimizer_g=optimizer_g,
+    #         optimizer_d=optimizer_d,
+    #         params=params,
+    #     )
 
     scaler = GradScaler(enabled=params.use_fp16, init_scale=1.0)
     if checkpoints and "grad_scaler" in checkpoints:

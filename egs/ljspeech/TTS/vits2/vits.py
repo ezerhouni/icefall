@@ -89,7 +89,7 @@ class VITS(nn.Module):
             "stochastic_duration_predictor_dropout_rate": 0.5,
             "stochastic_duration_predictor_flows": 4,
             "stochastic_duration_predictor_dds_conv_layers": 3,
-            "use_noised_mas": False,
+            "use_noised_mas": True,
             "noise_initial_mas": 0.01,
             "noise_scale_mas": 2e-06,
         },
@@ -361,7 +361,7 @@ class VITS(nn.Module):
             self._cache = outs
 
         # parse outputs
-        speech_hat_, l_length, _, start_idxs, x_mask, z_mask, outs_ = outs
+        speech_hat_, dur_nll, _, start_idxs, x_mask, z_mask, outs_ = outs
         _, z_p, m_p, logs_p, _, logs_q, hidden_x, logw, logw_ = outs_
         speech_ = get_segments(
             x=speech,
@@ -384,24 +384,30 @@ class VITS(nn.Module):
                     speech_hat_, speech_, return_mel=True
                 )
             kl_loss = self.kl_loss(z_p, logs_q, m_p, logs_p, z_mask)
-
             feat_match_loss = self.feat_match_loss(p_hat, p)
 
             # Generator duration loss
             y_dur_hat_r, y_dur_hat_g = self.duration_discriminator(
                 hidden_x, x_mask, logw_, logw
             )
-            dur_loss = torch.sum(l_length.float())
-            adv_loss = self.generator_adv_loss(y_dur_hat_g)
+            dur_loss = torch.sum(dur_nll.float())
+            adv_loss = self.generator_adv_loss(p_hat)
 
-            # dur_loss = self.duration_loss.forward_generator(y_dur_hat_g)
+            dur_gen_loss = self.duration_loss.forward_generator(y_dur_hat_g)
 
             mel_loss = mel_loss * self.lambda_mel
             kl_loss = kl_loss * self.lambda_kl
             dur_loss = dur_loss * self.lambda_dur
             adv_loss = adv_loss * self.lambda_adv
             feat_match_loss = feat_match_loss * self.lambda_feat_match
-            loss = mel_loss + kl_loss + dur_loss + adv_loss + feat_match_loss
+            loss = (
+                mel_loss
+                + kl_loss
+                + dur_loss
+                + adv_loss
+                + feat_match_loss
+                + dur_gen_loss
+            )
 
         stats = dict(
             generator_loss=loss.item(),
@@ -410,6 +416,7 @@ class VITS(nn.Module):
             generator_dur_loss=dur_loss.item(),
             generator_adv_loss=adv_loss.item(),
             generator_feat_match_loss=feat_match_loss.item(),
+            generator_dur_loss_gen=dur_gen_loss,
         )
 
         if return_sample:
@@ -488,23 +495,29 @@ class VITS(nn.Module):
             segment_size=self.generator.segment_size * self.generator.upsample_factor,
         )
 
-        # Discriminator duration loss
+        # calculate discriminator outputs
+        p, p_hat = self.discriminator(speech_), self.discriminator(speech_hat_.detach())
+
+        # Discriminator
+        with autocast(enabled=False):
+            # calculate losses
+            real_loss, fake_loss = self.discriminator_adv_loss(p_hat, p)
+            loss = real_loss + fake_loss
+
+        # Duration Discriminator
         y_dur_hat_r, y_dur_hat_g = self.duration_discriminator(
             hidden_x.detach(), x_mask.detach(), logw_.detach(), logw.detach()
         )
-        dur_loss = (
-            self.duration_loss.forward_discriminator(y_dur_hat_r, y_dur_hat_g)
-            * self.lambda_dur
-        )
 
-        # calculate discriminator outputs
-        p_hat = self.discriminator(speech_hat_.detach())
-        p = self.discriminator(speech_)
-
-        # calculate losses
         with autocast(enabled=False):
-            real_loss, fake_loss = self.discriminator_adv_loss(p_hat, p)
-            loss = real_loss + fake_loss + dur_loss
+            # real_dur_loss, fake_dur_loss = (
+            #     self.discriminator_adv_loss(y_dur_hat_g, y_dur_hat_r)
+            # )
+            dur_loss = self.duration_loss.forward_discriminator(
+                y_dur_hat_r, y_dur_hat_g
+            )
+
+        loss += dur_loss
 
         stats = dict(
             discriminator_loss=loss.item(),
