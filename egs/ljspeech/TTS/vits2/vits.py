@@ -63,6 +63,7 @@ class VITS(nn.Module):
             "text_encoder_cnn_module_kernel": 5,
             "text_encoder_blocks": 6,
             "text_encoder_dropout_rate": 0.1,
+            "use_spk_conditioned_txt_encoder": False,
             "decoder_kernel_size": 7,
             "decoder_channels": 512,
             "decoder_upsample_scales": [8, 8, 2, 2],
@@ -513,9 +514,6 @@ class VITS(nn.Module):
         )
 
         with autocast(enabled=False):
-            # real_dur_loss, fake_dur_loss = (
-            #     self.discriminator_adv_loss(y_dur_hat_g, y_dur_hat_r)
-            # )
             dur_loss = self.duration_loss.forward_discriminator(
                 y_dur_hat_r, y_dur_hat_g
             )

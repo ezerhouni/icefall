@@ -391,14 +391,15 @@ def train_one_epoch(
         loss_info = MetricsTracker()
         loss_info["samples"] = batch_size
 
-        # MAS with Gaussian Noise
-        model.module.generator.noise_current_mas = max(
-            model.module.generator.noise_initial_mas
-            - model.module.generator.noise_scale_mas
-            * params.batch_idx_train
-            * world_size,
-            0.0,
-        )
+        if model.module.generator.use_noised_mas:
+            # MAS with Gaussian Noise
+            model.module.generator.noise_current_mas = max(
+                model.module.generator.noise_initial_mas
+                - model.module.generator.noise_scale_mas
+                * params.batch_idx_train
+                * world_size,
+                0.0,
+            )
 
         try:
             with autocast(enabled=params.use_fp16):

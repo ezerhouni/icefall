@@ -130,7 +130,8 @@ class StochasticDurationPredictor(torch.nn.Module):
         x = x.detach()  # stop gradient
         x = self.pre(x)
         if g is not None:
-            x = x + self.global_conv(g.detach())  # stop gradient
+            g = torch.detach(g)
+            x = x + self.global_conv(g)  # stop gradient
         x = self.dds(x, x_mask)
         x = self.proj(x) * x_mask
 
