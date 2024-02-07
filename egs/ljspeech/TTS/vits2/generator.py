@@ -63,6 +63,7 @@ class VITSGenerator(torch.nn.Module):
         flow_kernel_size: int = 5,
         flow_base_dilation: int = 1,
         flow_layers: int = 4,
+        flow_nheads: int = 2,
         flow_dropout_rate: float = 0.0,
         use_weight_norm_in_flow: bool = True,
         use_only_mean_in_flow: bool = True,
@@ -175,6 +176,7 @@ class VITSGenerator(torch.nn.Module):
         self.flow = ResidualCouplingBlock(
             in_channels=hidden_channels,
             hidden_channels=hidden_channels,
+            n_heads=flow_nheads,
             flows=flow_flows,
             kernel_size=flow_kernel_size,
             base_dilation=flow_base_dilation,

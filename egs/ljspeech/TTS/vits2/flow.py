@@ -309,3 +309,8 @@ class ConvFlow(torch.nn.Module):
             return x, logdet
         else:
             return x
+
+
+class TransformerFlow(torch.nn.Module):
+    def __init__(self):
+        super().__init__()

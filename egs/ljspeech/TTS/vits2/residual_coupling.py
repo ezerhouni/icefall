@@ -35,6 +35,7 @@ class ResidualCouplingBlock(torch.nn.Module):
         self,
         in_channels: int = 192,
         hidden_channels: int = 192,
+        n_heads: int = 2,
         flows: int = 4,
         kernel_size: int = 5,
         base_dilation: int = 1,
@@ -69,7 +70,6 @@ class ResidualCouplingBlock(torch.nn.Module):
         self.flows = torch.nn.ModuleList()
         for i in range(flows):
             if not use_transformer_flows:
-                print("Normal Flow")
                 self.flows += [
                     ResidualAffineCouplingLayer(
                         in_channels=in_channels,
@@ -86,11 +86,11 @@ class ResidualCouplingBlock(torch.nn.Module):
                     )
                 ]
             else:
-                print("Transformer Flow")
                 self.flows += [
                     ResidualCouplingTransformersLayer(
                         in_channels=in_channels,
                         hidden_channels=hidden_channels,
+                        n_heads=n_heads,
                         kernel_size=kernel_size,
                         base_dilation=base_dilation,
                         layers=layers,
@@ -377,10 +377,12 @@ class ResidualCouplingTransformersLayer(torch.nn.Module):
         """
         xa, xb = x.split(x.size(1) // 2, dim=1)
 
-        transformer_mask = torch.where(torch.squeeze(x_mask) > 0, True, False)
-        xa_trans = self.pre_transformer(xa.transpose(1, 2), transformer_mask).transpose(
-            1, 2
+        transformer_mask = make_pad_mask(
+            torch.sum(x_mask, dim=[1, 2]).type(torch.int64)
         )
+        xa_trans = self.pre_transformer(
+            (xa * transformer_mask[:, None, :]).transpose(1, 2), transformer_mask
+        ).transpose(1, 2)
 
         xa_ = xa + xa_trans
 
