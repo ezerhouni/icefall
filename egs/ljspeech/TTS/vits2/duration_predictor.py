@@ -223,6 +223,8 @@ class DurationDiscriminator(torch.nn.Module):  # vits2
         self.p_dropout = p_dropout
         self.gin_channels = gin_channels
 
+        self.drop = torch.nn.Dropout(p_dropout)
+
         self.conv_1 = torch.nn.Conv1d(
             in_channels, filter_channels, kernel_size, padding=kernel_size // 2
         )
@@ -233,45 +235,85 @@ class DurationDiscriminator(torch.nn.Module):  # vits2
         self.norm_2 = LayerNorm(filter_channels)
         self.dur_proj = torch.nn.Conv1d(1, filter_channels, 1)
 
-        self.pre_out_conv_1 = torch.nn.Conv1d(
-            2 * filter_channels, filter_channels, kernel_size, padding=kernel_size // 2
+        self.LSTM = torch.nn.LSTM(
+            2 * filter_channels, filter_channels, batch_first=True, bidirectional=True
         )
-        self.pre_out_norm_1 = LayerNorm(filter_channels)
-        self.pre_out_conv_2 = torch.nn.Conv1d(
-            filter_channels, filter_channels, kernel_size, padding=kernel_size // 2
-        )
-        self.pre_out_norm_2 = LayerNorm(filter_channels)
 
         self.output_layer = torch.nn.Sequential(
             torch.nn.Linear(filter_channels, 1), torch.nn.Sigmoid()
         )
 
-    def forward_probability(self, x, x_mask, dur):
+        if gin_channels != 0:
+            self.cond = torch.nn.Conv1d(gin_channels, in_channels, 1)
+
+    def forward_probability(self, x, dur):
         dur = self.dur_proj(dur)
         x = torch.cat([x, dur], dim=1)
-        x = self.pre_out_conv_1(x * x_mask)
-        x = torch.relu(x)
-        x = self.pre_out_norm_1(x)
-        x = self.pre_out_conv_2(x * x_mask)
-        x = torch.relu(x)
-        x = self.pre_out_norm_2(x)
-        x = x * x_mask
         x = x.transpose(1, 2)
+        x, _ = self.LSTM(x)
         output_prob = self.output_layer(x)
         return output_prob
 
-    def forward(self, x, x_mask, dur_r, dur_hat):
+    def forward(self, x, x_mask, dur_r, dur_hat, g=None):
         x = torch.detach(x)
+        if g is not None:
+            g = torch.detach(g)
+            x = x + self.cond(g)
         x = self.conv_1(x * x_mask)
         x = torch.relu(x)
         x = self.norm_1(x)
+        x = self.drop(x)
         x = self.conv_2(x * x_mask)
         x = torch.relu(x)
         x = self.norm_2(x)
+        x = self.drop(x)
 
         output_probs = []
         for dur in [dur_r, dur_hat]:
-            output_prob = self.forward_probability(x, x_mask, dur)
-            output_probs.append([output_prob])
+            output_prob = self.forward_probability(x, dur)
+            output_probs.append(output_prob)
 
         return output_probs
+
+
+class DurationPredictor(torch.nn.Module):
+    def __init__(
+        self, in_channels, filter_channels, kernel_size, p_dropout, gin_channels=0
+    ):
+        super().__init__()
+
+        self.in_channels = in_channels
+        self.filter_channels = filter_channels
+        self.kernel_size = kernel_size
+        self.p_dropout = p_dropout
+        self.gin_channels = gin_channels
+
+        self.drop = torch.nn.Dropout(p_dropout)
+        self.conv_1 = torch.nn.Conv1d(
+            in_channels, filter_channels, kernel_size, padding=kernel_size // 2
+        )
+        self.norm_1 = LayerNorm(filter_channels)
+        self.conv_2 = torch.nn.Conv1d(
+            filter_channels, filter_channels, kernel_size, padding=kernel_size // 2
+        )
+        self.norm_2 = LayerNorm(filter_channels)
+        self.proj = torch.nn.Conv1d(filter_channels, 1, 1)
+
+        if gin_channels != 0:
+            self.cond = torch.nn.Conv1d(gin_channels, in_channels, 1)
+
+    def forward(self, x, x_mask, g=None):
+        x = torch.detach(x)
+        if g is not None:
+            g = torch.detach(g)
+            x = x + self.cond(g)
+        x = self.conv_1(x * x_mask)
+        x = torch.relu(x)
+        x = self.norm_1(x)
+        x = self.drop(x)
+        x = self.conv_2(x * x_mask)
+        x = torch.relu(x)
+        x = self.norm_2(x)
+        x = self.drop(x)
+        x = self.proj(x * x_mask)
+        return x * x_mask

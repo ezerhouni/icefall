@@ -314,8 +314,10 @@ def train_one_epoch(
     tokenizer: Tokenizer,
     optimizer_g: Optimizer,
     optimizer_d: Optimizer,
+    optimizer_dur: Optimizer,
     scheduler_g: LRSchedulerType,
     scheduler_d: LRSchedulerType,
+    scheduler_dur: LRSchedulerType,
     train_dl: torch.utils.data.DataLoader,
     valid_dl: torch.utils.data.DataLoader,
     scaler: GradScaler,
@@ -404,7 +406,7 @@ def train_one_epoch(
         try:
             with autocast(enabled=params.use_fp16):
                 # forward discriminator
-                loss_d, stats_d = model(
+                loss_d, dur_loss, stats_d = model(
                     text=tokens,
                     text_lengths=tokens_lens,
                     feats=features,
@@ -413,6 +415,11 @@ def train_one_epoch(
                     speech_lengths=audio_lens,
                     forward_generator=False,
                 )
+
+            optimizer_dur.zero_grad()
+            scaler.scale(dur_loss).backward()
+            scaler.step(optimizer_dur)
+
             for k, v in stats_d.items():
                 loss_info[k] = v * batch_size
 
@@ -789,8 +796,15 @@ def run(rank, world_size, args):
         discriminator_params, lr=params.lr, betas=(0.8, 0.99), eps=1e-9
     )
 
+    optimizer_dur = torch.optim.AdamW(
+        discriminator_params, lr=params.lr, betas=(0.8, 0.99), eps=1e-9
+    )
+
     scheduler_g = torch.optim.lr_scheduler.ExponentialLR(optimizer_g, gamma=0.999875)
     scheduler_d = torch.optim.lr_scheduler.ExponentialLR(optimizer_d, gamma=0.999875)
+    scheduler_dur = torch.optim.lr_scheduler.ExponentialLR(
+        optimizer_dur, gamma=0.999875
+    )
 
     if checkpoints is not None:
         # load state_dict for optimizers
@@ -871,8 +885,10 @@ def run(rank, world_size, args):
             tokenizer=tokenizer,
             optimizer_g=optimizer_g,
             optimizer_d=optimizer_d,
+            optimizer_dur=optimizer_dur,
             scheduler_g=scheduler_g,
             scheduler_d=scheduler_d,
+            scheduler_dur=scheduler_dur,
             train_dl=train_dl,
             valid_dl=valid_dl,
             scaler=scaler,

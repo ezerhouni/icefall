@@ -93,7 +93,7 @@ class VITS(nn.Module):
             "stochastic_duration_predictor_dropout_rate": 0.5,
             "stochastic_duration_predictor_flows": 4,
             "stochastic_duration_predictor_dds_conv_layers": 3,
-            "use_noised_mas": True,
+            "use_noised_mas": False,
             "noise_initial_mas": 0.01,
             "noise_scale_mas": 2e-06,
         },
@@ -201,12 +201,12 @@ class VITS(nn.Module):
             #   the input acoustic feature dimension.
             generator_params.update(vocabs=vocab_size, aux_channels=feature_dim)
 
-        self.duration_discriminator = DurationDiscriminator(
+        self.dur_disc = DurationDiscriminator(
             192,
             192,  # To verify it is a bit weird
             3,
             0.1,
-            gin_channels=256,  # To verify
+            gin_channels=0,  # To verify
         )
 
         self.generator = generator_class(
@@ -365,8 +365,19 @@ class VITS(nn.Module):
             self._cache = outs
 
         # parse outputs
-        speech_hat_, dur_nll, _, start_idxs, x_mask, z_mask, outs_ = outs
-        _, z_p, m_p, logs_p, _, logs_q, hidden_x, logw, logw_ = outs_
+        # speech_hat_, dur_nll, _, start_idxs, x_mask, z_mask, outs_ = outs
+        # _, z_p, m_p, logs_p, _, logs_q, hidden_x, logw, logw_ = outs_
+        (
+            speech_hat_,
+            dur_nll,
+            attn,
+            start_idxs,
+            x_mask,
+            z_mask,
+            (z, z_p, m_p, logs_p, m_q, logs_q),
+            (hidden_x, logw, logw_, logw_sdp),
+            g,
+        ) = outs
         speech_ = get_segments(
             x=speech,
             start_idxs=start_idxs * self.generator.upsample_factor,
@@ -391,9 +402,12 @@ class VITS(nn.Module):
             feat_match_loss = self.feat_match_loss(p_hat, p)
 
             # Generator duration loss
-            y_dur_hat_r, y_dur_hat_g = self.duration_discriminator(
-                hidden_x, x_mask, logw_, logw
-            )
+            _, y_dur_hat_g = self.dur_disc(hidden_x, x_mask, logw_, logw, g)
+
+            _, y_dur_hat_g_sdp = self.dur_disc(hidden_x, x_mask, logw_, logw_sdp, g)
+
+            y_dur_hat_g += y_dur_hat_g_sdp
+
             dur_loss = torch.sum(dur_nll.float())
             adv_loss = self.generator_adv_loss(p_hat)
 
@@ -491,8 +505,19 @@ class VITS(nn.Module):
             self._cache = outs
 
         # parse outputs
-        speech_hat_, l_length, _, start_idxs, x_mask, z_mask, outs_ = outs
-        _, z_p, m_p, logs_p, _, logs_q, hidden_x, logw, logw_ = outs_
+        # speech_hat_, l_length, _, start_idxs, x_mask, z_mask, outs_ = outs
+        # _, z_p, m_p, logs_p, _, logs_q, hidden_x, logw, logw_ = outs_
+        (
+            speech_hat_,
+            dur_nll,
+            attn,
+            start_idxs,
+            x_mask,
+            z_mask,
+            (z, z_p, m_p, logs_p, m_q, logs_q),
+            (hidden_x, logw, logw_, logw_sdp),
+            g,
+        ) = outs
         speech_ = get_segments(
             x=speech,
             start_idxs=start_idxs * self.generator.upsample_factor,
@@ -509,16 +534,28 @@ class VITS(nn.Module):
             loss = real_loss + fake_loss
 
         # Duration Discriminator
-        y_dur_hat_r, y_dur_hat_g = self.duration_discriminator(
-            hidden_x.detach(), x_mask.detach(), logw_.detach(), logw.detach()
+        y_dur_hat_r, y_dur_hat_g = self.dur_disc(
+            hidden_x.detach(),
+            x_mask.detach(),
+            logw_.detach(),
+            logw.detach(),
+            g.detach(),
         )
+
+        y_dur_hat_r_sdp, y_dur_hat_g_sdp = self.dur_disc(
+            hidden_x.detach(),
+            x_mask.detach(),
+            logw_.detach(),
+            logw_sdp.detach(),
+            g.detach(),
+        )
+        y_dur_hat_r += y_dur_hat_r_sdp
+        y_dur_hat_g += y_dur_hat_g_sdp
 
         with autocast(enabled=False):
             dur_loss = self.duration_loss.forward_discriminator(
                 y_dur_hat_r, y_dur_hat_g
             )
-
-        loss += dur_loss
 
         stats = dict(
             discriminator_loss=loss.item(),
@@ -531,7 +568,7 @@ class VITS(nn.Module):
         if reuse_cache or not self.training:
             self._cache = None
 
-        return loss, stats
+        return loss, dur_loss, stats
 
     def inference(
         self,
