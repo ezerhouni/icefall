@@ -73,6 +73,7 @@ class VITSGenerator(torch.nn.Module):
         use_noised_mas: bool = True,
         noise_initial_mas: float = 0.01,
         noise_scale_mas: float = 2e-6,
+        use_transformer_in_flows: bool = True,
     ):
         """Initialize VITS generator module.
 
@@ -178,6 +179,7 @@ class VITSGenerator(torch.nn.Module):
             dropout_rate=flow_dropout_rate,
             use_weight_norm=use_weight_norm_in_flow,
             use_only_mean=use_only_mean_in_flow,
+            use_transformer_in_flows=use_transformer_in_flows,
         )
         # TODO(kan-bayashi): Add deterministic version as an option
         self.duration_predictor = StochasticDurationPredictor(

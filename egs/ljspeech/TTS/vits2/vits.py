@@ -81,6 +81,7 @@ class VITS(nn.Module):
             "flow_dropout_rate": 0.0,
             "use_weight_norm_in_flow": True,
             "use_only_mean_in_flow": True,
+            "use_transformer_in_flows": True,
             "stochastic_duration_predictor_kernel_size": 3,
             "stochastic_duration_predictor_dropout_rate": 0.5,
             "stochastic_duration_predictor_flows": 4,
