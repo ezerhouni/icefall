@@ -407,6 +407,7 @@ def train_one_epoch(
                 )
             for k, v in stats_d.items():
                 loss_info[k] = v * batch_size
+
             # update discriminator
             optimizer_d.zero_grad()
             scaler.scale(loss_d).backward()
