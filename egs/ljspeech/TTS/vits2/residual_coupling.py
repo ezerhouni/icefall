@@ -294,18 +294,17 @@ class ResidualCouplingTransformersLayer(torch.nn.Module):
         self.half_channels = in_channels // 2
         self.use_only_mean = use_only_mean
 
-        self.pre_transformer = Transformer(
-            self.half_channels,
-            num_heads=heads_transformer,
-            num_layers=layers_transformer,
-            cnn_module_kernel=kernel_size_transformer,
-        )
-
-        # define modules
         self.input_conv = torch.nn.Conv1d(
             self.half_channels,
             hidden_channels,
             1,
+        )
+
+        self.pre_transformer = Transformer(
+            hidden_channels,
+            num_heads=heads_transformer,
+            num_layers=layers_transformer,
+            cnn_module_kernel=kernel_size_transformer,
         )
 
         self.encoder = WaveNet(
@@ -362,14 +361,12 @@ class ResidualCouplingTransformersLayer(torch.nn.Module):
             Tensor: Log-determinant tensor for NLL (B,) if not inverse.
         """
         xa, xb = x.split(x.size(1) // 2, dim=1)
+        h_mask = make_pad_mask(torch.sum(x_mask, dim=[1, 2]).type(torch.int64))
 
-        x_trans_mask = make_pad_mask(torch.sum(x_mask, dim=[1, 2]).type(torch.int64))
-        xa_ = self.pre_transformer(
-            (xa * x_mask).transpose(1, 2), x_trans_mask
-        ).transpose(1, 2)
-        xa_ = xa + xa_
-
-        h = self.input_conv(xa_) * x_mask
+        h = self.input_conv(xa) * x_mask
+        h = h + self.pre_transformer((h * x_mask).transpose(1, 2), h_mask).transpose(
+            1, 2
+        )  # vits2 residual connection
         h = self.encoder(h, x_mask, g=g)
 
         stats = self.proj(h) * x_mask

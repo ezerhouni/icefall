@@ -95,11 +95,11 @@ class DurationDiscriminator(torch.nn.Module):  # vits2
         x = self.pre_out_conv_1(x * x_mask)
         x = torch.relu(x)
         x = self.pre_out_norm_1(x)
-        x = self.dropout(x)
+
         x = self.pre_out_conv_2(x * x_mask)
         x = torch.relu(x)
         x = self.pre_out_norm_2(x)
-        x = self.dropout(x)
+
         x = x * x_mask
         x = x.transpose(1, 2)
         output_prob = self.output_layer(x)
@@ -123,12 +123,10 @@ class DurationDiscriminator(torch.nn.Module):  # vits2
         x = self.conv_1(x * x_mask)
         x = torch.relu(x)
         x = self.norm_1(x)
-        x = self.dropout(x)
 
         x = self.conv_2(x * x_mask)
         x = torch.relu(x)
         x = self.norm_2(x)
-        x = self.dropout(x)
 
         output_probs = []
         for dur in [dur_r, dur_hat]:
