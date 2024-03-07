@@ -297,7 +297,7 @@ def prepare_input(batch: dict, tokenizer: Tokenizer, device: torch.device):
     tokens = batch["tokens"]
 
     tokens = tokenizer.tokens_to_token_ids(
-        tokens, intersperse_blank=True, add_sos=True, add_eos=True
+        tokens, intersperse_blank=True, add_sos=False, add_eos=False
     )
     tokens = k2.RaggedTensor(tokens)
     row_splits = tokens.shape.row_splits(1)
@@ -316,8 +316,10 @@ def train_one_epoch(
     tokenizer: Tokenizer,
     optimizer_g: Optimizer,
     optimizer_d: Optimizer,
+    optimizer_dur: Optimizer,
     scheduler_g: LRSchedulerType,
     scheduler_d: LRSchedulerType,
+    scheduler_dur: LRSchedulerType,
     train_dl: torch.utils.data.DataLoader,
     valid_dl: torch.utils.data.DataLoader,
     scaler: GradScaler,
@@ -375,8 +377,10 @@ def train_one_epoch(
             params=params,
             optimizer_g=optimizer_g,
             optimizer_d=optimizer_d,
+            optimizer_dur=optimizer_dur,
             scheduler_g=scheduler_g,
             scheduler_d=scheduler_d,
+            scheduler_dur=scheduler_dur,
             sampler=train_dl.sampler,
             scaler=scaler,
             rank=0,
@@ -393,6 +397,23 @@ def train_one_epoch(
         loss_info = MetricsTracker()
         loss_info["samples"] = batch_size
 
+        if isinstance(model, DDP):
+            if model.module.generator.use_noised_mas:
+                # MAS with Gaussian Noise
+                model.module.generator.noise_current_mas = max(
+                    model.module.generator.noise_initial_mas
+                    - model.module.generator.noise_scale_mas * params.batch_idx_train,
+                    0.0,
+                )
+        else:
+            if model.generator.use_noised_mas:
+                # MAS with Gaussian Noise
+                model.generator.noise_current_mas = max(
+                    model.generator.noise_initial_mas
+                    - model.generator.noise_scale_mas * params.batch_idx_train,
+                    0.0,
+                )
+
         try:
             with autocast(enabled=params.use_fp16):
                 # forward discriminator
@@ -403,10 +424,29 @@ def train_one_epoch(
                     feats_lengths=features_lens,
                     speech=audio,
                     speech_lengths=audio_lens,
-                    forward_generator=False,
+                    forward_type="discriminator",
                 )
             for k, v in stats_d.items():
                 loss_info[k] = v * batch_size
+
+            with autocast(enabled=params.use_fp16):
+                # forward duration discriminator
+                dur_loss, stats_dur = model(
+                    text=tokens,
+                    text_lengths=tokens_lens,
+                    feats=features,
+                    feats_lengths=features_lens,
+                    speech=audio,
+                    speech_lengths=audio_lens,
+                    forward_type="duration_discriminator",
+                )
+            for k, v in stats_dur.items():
+                loss_info[k] = v * batch_size
+
+            # update discriminator duration
+            optimizer_dur.zero_grad()
+            scaler.scale(dur_loss).backward()
+            scaler.step(optimizer_dur)
 
             # update discriminator
             optimizer_d.zero_grad()
@@ -422,7 +462,7 @@ def train_one_epoch(
                     feats_lengths=features_lens,
                     speech=audio,
                     speech_lengths=audio_lens,
-                    forward_generator=True,
+                    forward_type="generator",
                     return_sample=params.batch_idx_train % params.log_interval == 0,
                 )
             for k, v in stats_g.items():
@@ -599,10 +639,24 @@ def compute_validation_loss(
                 feats_lengths=features_lens,
                 speech=audio,
                 speech_lengths=audio_lens,
-                forward_generator=False,
+                forward_type="discriminator",
             )
             assert loss_d.requires_grad is False
             for k, v in stats_d.items():
+                loss_info[k] = v * batch_size
+
+            # forward duration discriminator
+            loss_dur, stats_dur = model(
+                text=tokens,
+                text_lengths=tokens_lens,
+                feats=features,
+                feats_lengths=features_lens,
+                speech=audio,
+                speech_lengths=audio_lens,
+                forward_type="duration_discriminator",
+            )
+            assert loss_dur.requires_grad is False
+            for k, v in stats_dur.items():
                 loss_info[k] = v * batch_size
 
             # forward generator
@@ -613,7 +667,7 @@ def compute_validation_loss(
                 feats_lengths=features_lens,
                 speech=audio,
                 speech_lengths=audio_lens,
-                forward_generator=True,
+                forward_type="generator",
             )
             assert loss_g.requires_grad is False
             for k, v in stats_g.items():
@@ -656,6 +710,7 @@ def scan_pessimistic_batches_for_oom(
     tokenizer: Tokenizer,
     optimizer_g: torch.optim.Optimizer,
     optimizer_d: torch.optim.Optimizer,
+    optimizer_dur: torch.optim.Optimizer,
     params: AttributeDict,
 ):
     from lhotse.dataset import find_pessimistic_batches
@@ -680,10 +735,27 @@ def scan_pessimistic_batches_for_oom(
                     feats_lengths=features_lens,
                     speech=audio,
                     speech_lengths=audio_lens,
-                    forward_generator=False,
+                    forward_type="discriminator",
                 )
+
+            # for duration discriminator
+            with autocast(enabled=params.use_fp16):
+                dur_loss, stats_dur = model(
+                    text=tokens,
+                    text_lengths=tokens_lens,
+                    feats=features,
+                    feats_lengths=features_lens,
+                    speech=audio,
+                    speech_lengths=audio_lens,
+                    forward_type="duration_discriminator",
+                )
+
+            optimizer_dur.zero_grad()
+            dur_loss.backward()
+
             optimizer_d.zero_grad()
             loss_d.backward()
+
             # for generator
             with autocast(enabled=params.use_fp16):
                 loss_g, stats_g = model(
@@ -693,7 +765,7 @@ def scan_pessimistic_batches_for_oom(
                     feats_lengths=features_lens,
                     speech=audio,
                     speech_lengths=audio_lens,
-                    forward_generator=True,
+                    forward_type="generator",
                 )
             optimizer_g.zero_grad()
             loss_g.backward()
@@ -754,12 +826,17 @@ def run(rank, world_size, args):
     model = get_model(params)
     generator = model.generator
     discriminator = model.discriminator
+    dur_disc = model.dur_disc
 
     num_param_g = sum([p.numel() for p in generator.parameters()])
     logging.info(f"Number of parameters in generator: {num_param_g}")
     num_param_d = sum([p.numel() for p in discriminator.parameters()])
     logging.info(f"Number of parameters in discriminator: {num_param_d}")
-    logging.info(f"Total number of parameters: {num_param_g + num_param_d}")
+    num_param_dur = sum([p.numel() for p in dur_disc.parameters()])
+    logging.info(f"Number of parameters in duration discriminator: {num_param_dur}")
+    logging.info(
+        f"Total number of parameters: {num_param_g + num_param_d + num_param_dur}"
+    )
 
     assert params.start_epoch > 0, params.start_epoch
     checkpoints = load_checkpoint_if_available(params=params, model=model)
@@ -775,9 +852,15 @@ def run(rank, world_size, args):
     optimizer_d = torch.optim.AdamW(
         discriminator.parameters(), lr=params.lr, betas=(0.8, 0.99), eps=1e-9
     )
+    optimizer_dur = torch.optim.AdamW(
+        dur_disc.parameters(), lr=params.lr, betas=(0.8, 0.99), eps=1e-9
+    )
 
     scheduler_g = torch.optim.lr_scheduler.ExponentialLR(optimizer_g, gamma=0.999875)
     scheduler_d = torch.optim.lr_scheduler.ExponentialLR(optimizer_d, gamma=0.999875)
+    scheduler_dur = torch.optim.lr_scheduler.ExponentialLR(
+        optimizer_dur, gamma=0.999875
+    )
 
     if checkpoints is not None:
         # load state_dict for optimizers
@@ -787,6 +870,9 @@ def run(rank, world_size, args):
         if "optimizer_d" in checkpoints:
             logging.info("Loading optimizer_d state dict")
             optimizer_d.load_state_dict(checkpoints["optimizer_d"])
+        if "optimizer_dur" in checkpoints:
+            logging.info("Loading optimizer_dur state dict")
+            optimizer_dur.load_state_dict(checkpoints["optimizer_dur"])
 
         # load state_dict for schedulers
         if "scheduler_g" in checkpoints:
@@ -795,6 +881,9 @@ def run(rank, world_size, args):
         if "scheduler_d" in checkpoints:
             logging.info("Loading scheduler_d state dict")
             scheduler_d.load_state_dict(checkpoints["scheduler_d"])
+        if "scheduler_dur" in checkpoints:
+            logging.info("Loading scheduler_dur state dict")
+            scheduler_dur.load_state_dict(checkpoints["scheduler_dur"])
 
     if params.print_diagnostics:
         opts = diagnostics.TensorDiagnosticOptions(
@@ -806,7 +895,6 @@ def run(rank, world_size, args):
         register_inf_check_hooks(model)
 
     ljspeech = LJSpeechTtsDataModule(args)
-
     train_cuts = ljspeech.train_cuts()
 
     def remove_short_and_long_utt(c: Cut):
@@ -834,6 +922,7 @@ def run(rank, world_size, args):
             tokenizer=tokenizer,
             optimizer_g=optimizer_g,
             optimizer_d=optimizer_d,
+            optimizer_dur=optimizer_dur,
             params=params,
         )
 
@@ -859,8 +948,10 @@ def run(rank, world_size, args):
             tokenizer=tokenizer,
             optimizer_g=optimizer_g,
             optimizer_d=optimizer_d,
+            optimizer_dur=optimizer_dur,
             scheduler_g=scheduler_g,
             scheduler_d=scheduler_d,
+            scheduler_dur=scheduler_dur,
             train_dl=train_dl,
             valid_dl=valid_dl,
             scaler=scaler,
@@ -881,8 +972,10 @@ def run(rank, world_size, args):
                 model=model,
                 optimizer_g=optimizer_g,
                 optimizer_d=optimizer_d,
+                optimizer_dur=optimizer_dur,
                 scheduler_g=scheduler_g,
                 scheduler_d=scheduler_d,
+                scheduler_dur=scheduler_dur,
                 sampler=train_dl.sampler,
                 scaler=scaler,
                 rank=rank,
@@ -899,6 +992,7 @@ def run(rank, world_size, args):
         # step per epoch
         scheduler_g.step()
         scheduler_d.step()
+        scheduler_dur.step()
 
     logging.info("Done!")
 
