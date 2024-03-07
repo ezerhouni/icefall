@@ -130,7 +130,8 @@ class DurationDiscriminator(torch.nn.Module):  # vits2
 
         output_probs = []
         for dur in [dur_r, dur_hat]:
-            output_prob = self.forward_probability(x, x_mask, dur)
-            output_probs.append(output_prob)
+            if dur:
+                output_prob = self.forward_probability(x, x_mask, dur)
+                output_probs.append([output_prob])
 
         return output_probs

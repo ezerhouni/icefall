@@ -297,7 +297,7 @@ def prepare_input(batch: dict, tokenizer: Tokenizer, device: torch.device):
     tokens = batch["tokens"]
 
     tokens = tokenizer.tokens_to_token_ids(
-        tokens, intersperse_blank=True, add_sos=True, add_eos=True
+        tokens, intersperse_blank=True, add_sos=False, add_eos=False
     )
     tokens = k2.RaggedTensor(tokens)
     row_splits = tokens.shape.row_splits(1)
@@ -416,6 +416,20 @@ def train_one_epoch(
 
         try:
             with autocast(enabled=params.use_fp16):
+                # forward discriminator
+                loss_d, stats_d = model(
+                    text=tokens,
+                    text_lengths=tokens_lens,
+                    feats=features,
+                    feats_lengths=features_lens,
+                    speech=audio,
+                    speech_lengths=audio_lens,
+                    forward_type="discriminator",
+                )
+            for k, v in stats_d.items():
+                loss_info[k] = v * batch_size
+
+            with autocast(enabled=params.use_fp16):
                 # forward duration discriminator
                 dur_loss, stats_dur = model(
                     text=tokens,
@@ -429,24 +443,11 @@ def train_one_epoch(
             for k, v in stats_dur.items():
                 loss_info[k] = v * batch_size
 
+            # update discriminator duration
             optimizer_dur.zero_grad()
             scaler.scale(dur_loss).backward()
             scaler.step(optimizer_dur)
 
-            with autocast(enabled=params.use_fp16):
-                # forward discriminator
-                loss_d, stats_d = model(
-                    text=tokens,
-                    text_lengths=tokens_lens,
-                    feats=features,
-                    feats_lengths=features_lens,
-                    speech=audio,
-                    speech_lengths=audio_lens,
-                    forward_type="discriminator",
-                )
-
-            for k, v in stats_d.items():
-                loss_info[k] = v * batch_size
             # update discriminator
             optimizer_d.zero_grad()
             scaler.scale(loss_d).backward()
@@ -630,20 +631,6 @@ def compute_validation_loss(
             loss_info = MetricsTracker()
             loss_info["samples"] = batch_size
 
-            # forward duration discriminator
-            loss_dur, stats_dur = model(
-                text=tokens,
-                text_lengths=tokens_lens,
-                feats=features,
-                feats_lengths=features_lens,
-                speech=audio,
-                speech_lengths=audio_lens,
-                forward_type="duration_discriminator",
-            )
-            assert loss_dur.requires_grad is False
-            for k, v in stats_dur.items():
-                loss_info[k] = v * batch_size
-
             # forward discriminator
             loss_d, stats_d = model(
                 text=tokens,
@@ -656,6 +643,20 @@ def compute_validation_loss(
             )
             assert loss_d.requires_grad is False
             for k, v in stats_d.items():
+                loss_info[k] = v * batch_size
+
+            # forward duration discriminator
+            loss_dur, stats_dur = model(
+                text=tokens,
+                text_lengths=tokens_lens,
+                feats=features,
+                feats_lengths=features_lens,
+                speech=audio,
+                speech_lengths=audio_lens,
+                forward_type="duration_discriminator",
+            )
+            assert loss_dur.requires_grad is False
+            for k, v in stats_dur.items():
                 loss_info[k] = v * batch_size
 
             # forward generator
@@ -725,6 +726,18 @@ def scan_pessimistic_batches_for_oom(
             batch, tokenizer, device
         )
         try:
+            # for discriminator
+            with autocast(enabled=params.use_fp16):
+                loss_d, stats_d = model(
+                    text=tokens,
+                    text_lengths=tokens_lens,
+                    feats=features,
+                    feats_lengths=features_lens,
+                    speech=audio,
+                    speech_lengths=audio_lens,
+                    forward_type="discriminator",
+                )
+
             # for duration discriminator
             with autocast(enabled=params.use_fp16):
                 dur_loss, stats_dur = model(
@@ -740,20 +753,9 @@ def scan_pessimistic_batches_for_oom(
             optimizer_dur.zero_grad()
             dur_loss.backward()
 
-            # for discriminator
-            with autocast(enabled=params.use_fp16):
-                loss_d, stats_d = model(
-                    text=tokens,
-                    text_lengths=tokens_lens,
-                    feats=features,
-                    feats_lengths=features_lens,
-                    speech=audio,
-                    speech_lengths=audio_lens,
-                    forward_type="discriminator",
-                )
-
             optimizer_d.zero_grad()
             loss_d.backward()
+
             # for generator
             with autocast(enabled=params.use_fp16):
                 loss_g, stats_g = model(

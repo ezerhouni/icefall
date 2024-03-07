@@ -419,7 +419,7 @@ class VITS(nn.Module):
             adv_loss = self.generator_adv_loss(p_hat)
             feat_match_loss = self.feat_match_loss(p_hat, p)
 
-            y_dur_hat_r, y_dur_hat_g = self.dur_disc(hidden_x, x_mask, logw_, logw)
+            y_dur_hat_g = self.dur_disc(hidden_x, x_mask, logw_, logw)
             dur_gen_loss = self.generator_adv_loss(y_dur_hat_g)
 
             mel_loss = mel_loss * self.lambda_mel
@@ -547,6 +547,10 @@ class VITS(nn.Module):
             discriminator_fake_loss=fake_loss.item(),
         )
 
+        # reset cache
+        if reuse_cache or not self.training:
+            self._cache = None
+
         return loss, stats
 
     def _forward_discriminator_duration(
@@ -626,10 +630,6 @@ class VITS(nn.Module):
         stats = dict(
             discriminator_dur_loss=dur_loss.item(),
         )
-
-        # reset cache
-        if reuse_cache or not self.training:
-            self._cache = None
 
         return dur_loss, stats
 
