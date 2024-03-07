@@ -533,13 +533,16 @@ class VITSGenerator(torch.nn.Module):
         else:
             # duration
             if dur is None:
-                logw = self.duration_predictor(
-                    x,
-                    x_mask,
-                    g=g,
-                    inverse=True,
-                    noise_scale=noise_scale_dur,
-                )
+                if self.use_stochastic_duration_predictor:
+                    logw = self.duration_predictor(
+                        x,
+                        x_mask,
+                        g=g,
+                        inverse=True,
+                        noise_scale=noise_scale_dur,
+                    )
+                else:
+                    logw = self.duration_predictor(x, x_mask, g=g)
                 w = torch.exp(logw) * x_mask * alpha
                 dur = torch.ceil(w)
             y_lengths = torch.clamp_min(torch.sum(dur, [1, 2]), 1).long()
